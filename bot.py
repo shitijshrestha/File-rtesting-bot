@@ -7,7 +7,7 @@ BOT_TOKEN = "8338489595:AAFM9H8I9FYtJw7j-VZgVFHE3wPHykX4CQ4"
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
 # --- Admins & Targets ---
-ADMINS = set()       # admin user_ids
+ADMINS = set()       # user_ids who are admins
 TARGET_CHATS = set() # groups/channels where bot is admin
 TELEGRAM_CAPTION_LIMIT = 1024  # Telegram max caption length
 
@@ -16,37 +16,46 @@ def clean_filename(original: str) -> str:
     if not original:
         original = "Video.mp4"
 
-    # Remove all links
-    no_links = re.sub(r"(https?://\S+|t\.me/\S+|\S+\.com\S*)", "", original)
+    # Remove plain links from filename (but keep join links in caption)
+    no_links = re.sub(r"(https?://\S+)", "", original)
 
-    # Replace all target names → Shitij
-    replaced = re.sub(r"(?i)(tvshowhub|tvshow|hub|bhavik611|mrxvoltz|srp_main_channel)", "Shitij", no_links)
+    # Replace unwanted names → Shitij
+    replaced = re.sub(
+        r"(?i)(tvshowhub|tvshow|hub|bhavik611|mrxvoltz|srp_main_channel|srbrips)",
+        "Shitij",
+        no_links,
+    )
 
-    # Remove repeated Shitij
+    # Replace "[@SRBRips]" with "[@ShitijRips]" (keep links safe)
+    replaced = re.sub(r"\[@[^]]*\]", "[@ShitijRips]", replaced, flags=re.IGNORECASE)
+
+    # Remove duplicate Shitij
     replaced = re.sub(r"(Shitij)+", "Shitij", replaced)
 
-    # Replace spaces/slashes with dot
+    # Replace spaces/slashes → dot
     cleaned = re.sub(r"[\s/]+", ".", replaced).strip(" .")
 
-    # Monospace + Telegram limit
+    # Monospace style caption
     caption = f"<code>{html.escape(cleaned)}</code>"
     if len(caption) > TELEGRAM_CAPTION_LIMIT:
-        caption = caption[:TELEGRAM_CAPTION_LIMIT-8] + "…</code>"
+        caption = caption[: TELEGRAM_CAPTION_LIMIT - 8] + "…</code>"
 
     return caption
 
-# --- Command Handlers ---
+# --- Commands ---
 @bot.message_handler(commands=['start'])
 def start(msg):
     bot.reply_to(
         msg,
         "👋 Welcome!\n\n"
         "📌 Send any video/document, I'll:\n"
-        "   - Replace TvShowHub/Bhavik611/MRxVoltz/SRP_Main_Channel → Shitij\n"
-        "   - Remove links (http, https, t.me, etc.)\n"
-        "   - Keep full filename in Mono-Serif style\n"
-        "   - Forward to channels/groups where bot is admin (sender hidden)\n\n"
-        "✅ Works for all videos/documents."
+        "   - Replace names → Shitij\n"
+        "   - Remove normal links in filename\n"
+        "   - Convert [@anything] → [@ShitijRips]\n"
+        "   - Keep Join links (https://t.me/...) safe\n"
+        "   - Keep filename in monospace style\n"
+        "   - Send to all groups/channels where bot is admin\n\n"
+        "✅ Works for videos/documents only."
     )
 
 @bot.message_handler(commands=['addadmin'])
@@ -63,7 +72,7 @@ def add_admin(msg):
     except Exception as e:
         bot.reply_to(msg, f"⚠️ Error: {e}")
 
-# --- Video / Document Handler ---
+# --- Media Handler ---
 @bot.message_handler(content_types=['video', 'document'])
 def handle_media(msg):
     user_id = msg.from_user.id
@@ -72,39 +81,35 @@ def handle_media(msg):
         return
 
     if msg.content_type == 'video':
-        original_name = msg.caption if msg.caption else msg.video.file_name
+        original_name = msg.caption or msg.video.file_name
         file_id = msg.video.file_id
         file_size = msg.video.file_size
         send_func = bot.send_video
+        extra_args = {"supports_streaming": True}
     else:
-        original_name = msg.caption if msg.caption else msg.document.file_name
+        original_name = msg.caption or msg.document.file_name
         file_id = msg.document.file_id
         file_size = msg.document.file_size
         send_func = bot.send_document
+        extra_args = {}
 
     new_caption = clean_filename(original_name)
 
     try:
         # Send back to sender
-        if file_size < 2000 * 1024 * 1024:
-            send_func(msg.chat.id, file_id, caption=new_caption, parse_mode="HTML", supports_streaming=True)
-        else:
-            send_func(msg.chat.id, file_id, caption=new_caption, parse_mode="HTML")
+        send_func(msg.chat.id, file_id, caption=new_caption, parse_mode="HTML", **extra_args)
 
-        # Forward to all admin channels/groups
+        # Send to all admin groups/channels
         for target in TARGET_CHATS:
             try:
-                if file_size < 2000 * 1024 * 1024:
-                    send_func(target, file_id, caption=new_caption, parse_mode="HTML", supports_streaming=True)
-                else:
-                    send_func(target, file_id, caption=new_caption, parse_mode="HTML")
+                send_func(target, file_id, caption=new_caption, parse_mode="HTML", **extra_args)
             except Exception as e:
                 print(f"⚠️ Failed to send to {target}: {e}")
 
     except Exception as e:
         bot.reply_to(msg, f"⚠️ Error sending: {e}")
 
-# --- Track Groups/Channels where bot is admin ---
+# --- Track groups/channels where bot is admin ---
 @bot.my_chat_member_handler()
 def track_groups_channels(update):
     chat = update.chat
@@ -117,5 +122,5 @@ def track_groups_channels(update):
         print(f"❌ Bot removed from: {chat.title or chat.id}")
 
 # --- Run Bot ---
-print("🤖 ISH Bot running with full captions, Shitij rename & admin forwarding...")
+print("🤖 ISH Bot running with Shitij renaming, caption cleaning & admin auto-forwarding...")
 bot.infinity_polling()
