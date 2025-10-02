@@ -83,13 +83,11 @@ def handle_media(msg):
     if msg.content_type == 'video':
         original_name = msg.caption or msg.video.file_name
         file_id = msg.video.file_id
-        file_size = msg.video.file_size
         send_func = bot.send_video
         extra_args = {"supports_streaming": True}
     else:
         original_name = msg.caption or msg.document.file_name
         file_id = msg.document.file_id
-        file_size = msg.document.file_size
         send_func = bot.send_document
         extra_args = {}
 
@@ -123,4 +121,9 @@ def track_groups_channels(update):
 
 # --- Run Bot ---
 print("🤖 ISH Bot running with Shitij renaming, caption cleaning & admin auto-forwarding...")
-bot.infinity_polling()
+
+# ✅ Auto delete webhook before polling
+bot.remove_webhook()
+
+# ✅ Safe polling loop
+bot.infinity_polling(skip_pending=True, timeout=20)
