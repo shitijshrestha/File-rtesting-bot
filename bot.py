@@ -9,6 +9,7 @@ bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 # --- Admins & Targets ---
 ADMINS = set()       # user_ids who are admins
 TARGET_CHATS = set() # groups/channels where bot is admin
+DUMP_CHANNEL_ID = -1002990446200
 TELEGRAM_CAPTION_LIMIT = 1024  # Telegram max caption length
 
 # --- Helper Function ---
@@ -54,7 +55,8 @@ def start(msg):
         "   - Convert [@anything] → [@ShitijRips]\n"
         "   - Keep Join links (https://t.me/...) safe\n"
         "   - Keep filename in monospace style\n"
-        "   - Send to all groups/channels where bot is admin\n\n"
+        "   - Send to all groups/channels where bot is admin\n"
+        "   - Forward to dump channel automatically\n\n"
         "✅ Works for videos/documents only."
     )
 
@@ -104,6 +106,12 @@ def handle_media(msg):
             except Exception as e:
                 print(f"⚠️ Failed to send to {target}: {e}")
 
+        # Send to dump channel automatically
+        try:
+            send_func(DUMP_CHANNEL_ID, file_id, caption=new_caption, parse_mode="HTML", **extra_args)
+        except Exception as e:
+            print(f"⚠️ Failed to send to dump channel: {e}")
+
     except Exception as e:
         bot.reply_to(msg, f"⚠️ Error sending: {e}")
 
@@ -120,7 +128,7 @@ def track_groups_channels(update):
         print(f"❌ Bot removed from: {chat.title or chat.id}")
 
 # --- Run Bot ---
-print("🤖 ISH Bot running with Shitij renaming, caption cleaning & admin auto-forwarding...")
+print("🤖 ISH Bot running with Shitij renaming, caption cleaning, admin auto-forwarding & dump channel...")
 
 # ✅ Auto delete webhook before polling
 bot.remove_webhook()
