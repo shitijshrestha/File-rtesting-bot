@@ -7,8 +7,8 @@ BOT_TOKEN = "8338489595:AAFM9H8I9FYtJw7j-VZgVFHE3wPHykX4CQ4"
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
 # --- Admins & Targets ---
-ADMINS = set()       # user_ids who are admins
-TARGET_CHATS = set() # groups/channels where bot is admin
+ADMINS = set()
+TARGET_CHATS = set()
 DUMP_CHANNEL_ID = -1002990446200
 TELEGRAM_CAPTION_LIMIT = 1024  # Telegram max caption length
 
@@ -17,30 +17,19 @@ def clean_filename(original: str) -> str:
     if not original:
         original = "Video.mp4"
 
-    # Remove plain links from filename (but keep join links in caption)
     no_links = re.sub(r"(https?://\S+)", "", original)
-
-    # Replace unwanted names → Shitij
     replaced = re.sub(
         r"(?i)(tvshowhub|tvshow|hub|bhavik611|mrxvoltz|srp_main_channel|srbrips)",
         "Shitij",
         no_links,
     )
-
-    # Replace "[@SRBRips]" with "[@ShitijRips]" (keep links safe)
     replaced = re.sub(r"\[@[^]]*\]", "[@ShitijRips]", replaced, flags=re.IGNORECASE)
-
-    # Remove duplicate Shitij
     replaced = re.sub(r"(Shitij)+", "Shitij", replaced)
-
-    # Replace spaces/slashes → dot
     cleaned = re.sub(r"[\s/]+", ".", replaced).strip(" .")
 
-    # Monospace style caption
     caption = f"<code>{html.escape(cleaned)}</code>"
     if len(caption) > TELEGRAM_CAPTION_LIMIT:
         caption = caption[: TELEGRAM_CAPTION_LIMIT - 8] + "…</code>"
-
     return caption
 
 # --- Commands ---
@@ -54,9 +43,7 @@ def start(msg):
         "   - Remove normal links in filename\n"
         "   - Convert [@anything] → [@ShitijRips]\n"
         "   - Keep Join links (https://t.me/...) safe\n"
-        "   - Keep filename in monospace style\n"
-        "   - Send to all groups/channels where bot is admin\n"
-        "   - Forward to dump channel automatically\n\n"
+        "   - Keep filename in monospace style\n\n"
         "✅ Works for videos/documents only."
     )
 
@@ -71,6 +58,38 @@ def add_admin(msg):
         new_admin = int(parts[1])
         ADMINS.add(new_admin)
         bot.reply_to(msg, f"✅ Added admin: <code>{new_admin}</code>")
+    except Exception as e:
+        bot.reply_to(msg, f"⚠️ Error: {e}")
+
+@bot.message_handler(commands=['whereadmin'])
+def where_admin(msg):
+    if msg.from_user.id not in ADMINS:
+        bot.reply_to(msg, "❌ Admin only.")
+        return
+    if not TARGET_CHATS:
+        bot.reply_to(msg, "🤖 Bot is not admin in any group/channel yet.")
+        return
+    text = "📋 <b>ISH Bot is admin in:</b>\n\n"
+    for chat_id in TARGET_CHATS:
+        text += f"🔹 <code>{chat_id}</code>\n"
+    bot.reply_to(msg, text)
+
+@bot.message_handler(commands=['removechat'])
+def remove_chat(msg):
+    if msg.from_user.id not in ADMINS:
+        bot.reply_to(msg, "❌ Admin only.")
+        return
+    try:
+        parts = msg.text.split()
+        if len(parts) < 2:
+            bot.reply_to(msg, "Usage: /removechat <chat_id>")
+            return
+        chat_id = int(parts[1])
+        if chat_id in TARGET_CHATS:
+            TARGET_CHATS.remove(chat_id)
+            bot.reply_to(msg, f"✅ Removed chat: <code>{chat_id}</code>")
+        else:
+            bot.reply_to(msg, "⚠️ Chat ID not found in admin list.")
     except Exception as e:
         bot.reply_to(msg, f"⚠️ Error: {e}")
 
@@ -96,17 +115,14 @@ def handle_media(msg):
     new_caption = clean_filename(original_name)
 
     try:
-        # Send back to sender
         send_func(msg.chat.id, file_id, caption=new_caption, parse_mode="HTML", **extra_args)
 
-        # Send to all admin groups/channels
         for target in TARGET_CHATS:
             try:
                 send_func(target, file_id, caption=new_caption, parse_mode="HTML", **extra_args)
             except Exception as e:
                 print(f"⚠️ Failed to send to {target}: {e}")
 
-        # Send to dump channel automatically
         try:
             send_func(DUMP_CHANNEL_ID, file_id, caption=new_caption, parse_mode="HTML", **extra_args)
         except Exception as e:
@@ -130,8 +146,5 @@ def track_groups_channels(update):
 # --- Run Bot ---
 print("🤖 ISH Bot running with Shitij renaming, caption cleaning, admin auto-forwarding & dump channel...")
 
-# ✅ Auto delete webhook before polling
 bot.remove_webhook()
-
-# ✅ Safe polling loop
 bot.infinity_polling(skip_pending=True, timeout=20)
