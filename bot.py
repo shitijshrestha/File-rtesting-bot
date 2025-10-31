@@ -2,89 +2,68 @@ import telebot
 import re
 import html
 
-# --- Bot Token ---
+# ---------------- CONFIG ----------------
 BOT_TOKEN = "8338489595:AAFM9H8I9FYtJw7j-VZgVFHE3wPHykX4CQ4"
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
-# --- Admins & Targets ---
 ADMINS = set()
 TARGET_CHATS = set()
 DUMP_CHANNEL_ID = -1002990446200
-TELEGRAM_CAPTION_LIMIT = 1024  # Telegram max caption length
+TELEGRAM_CAPTION_LIMIT = 1024
 
-# --- Helper Function ---
-def clean_filename(original: str) -> str:
+# ---------------- HELPERS ----------------
+def clean_filename_and_caption(original: str) -> (str, str):
     """
-    Cleans and formats any caption or filename.
-    - Removes all non-Telegram links
-    - Replaces any username, tag, group name, or text with 'Shitij' or [@ShitijRips]
-    - Keeps Telegram join links (https://t.me/...) safe
-    - Adds custom caption format
+    Clean filename:
+    - Remove any trailing creator tags
+    - Replace DG_Contents/tvshowhub/etc.
+    - Add _ShitijRips.mp4 suffix
+    - Caption is always: Join:-[@ShitijRips]
     """
     if not original:
         original = "Video.mp4"
 
-    # Keep Telegram join links safe temporarily
-    join_links = re.findall(r"(https?://t\.me/[^\s]+)", original)
-    for i, link in enumerate(join_links):
-        original = original.replace(link, f"__JOIN_LINK_{i}__")
-
-    # Remove all other URLs
+    # Remove normal links
     no_links = re.sub(r"(https?://\S+)", "", original)
 
-    # Replace every kind of @username or tag with [@ShitijRips]
-    replaced = re.sub(r"@\w+", "[@ShitijRips]", no_links)
+    # Remove any trailing creator tags like -Mrn_Officialx, -SRBRips, -DG_Contents
+    no_extra_tags = re.sub(r"-[@\w]+$", "", no_links)
 
-    # Replace known encoder/group words → Shitij
+    # Replace DG_Contents, tvshowhub, etc. with Shitij
     replaced = re.sub(
-        r"(?i)(hub|rips|encoded|encoder|by|official|content|channel|series|rip|webdl|upload|join|dmt|dg|jstar|mrn|mimam|tvshow|zee5|dangalplay|hotstar|sony|voot|ullu|prime|netflix|altbalaji|officialx|dg_rips|dmt_encod3s|dg_contents)",
+        r"(?i)(DG_Contents|tvshowhub|tvshow|hub|bhavik611|mrxvoltz|srp_main_channel|srbrips)",
         "Shitij",
-        replaced,
+        no_extra_tags,
     )
 
-    # Fix duplicates (like ShitijShitij → Shitij)
+    # Collapse multiple "Shitij"
     replaced = re.sub(r"(Shitij)+", "Shitij", replaced)
 
-    # Replace slashes, newlines, or extra spaces with dots
-    cleaned = re.sub(r"[\s/]+", ".", replaced).strip(" .")
+    # Replace spaces/slashes with dots
+    cleaned_name = re.sub(r"[\s/]+", ".", replaced).strip(" .")
 
-    # Restore Telegram join links
-    for i, link in enumerate(join_links):
-        cleaned = cleaned.replace(f"__JOIN_LINK_{i}__", link)
+    # Add _ShitijRips.mp4 suffix
+    cleaned_name = re.sub(r"\.mp4$", "", cleaned_name, flags=re.IGNORECASE)
+    cleaned_name += "_ShitijRips.mp4"
 
-    # Ensure it ends with -Shitij.mp4
-    if not cleaned.lower().endswith(".mp4"):
-        cleaned += ".mp4"
-    if "-Shitij" not in cleaned:
-        cleaned = cleaned.replace(".mp4", "-Shitij.mp4")
+    # Caption line
+    caption = f"Join:-[@ShitijRips]"
 
-    # Build final caption format
-    caption = (
-        f"🔥 Upload By :- [@ShitijRips]\n"
-        f"💥 Join 👉 https://t.me/ShitijRips\n\n"
-        f"🎬 {html.escape(cleaned)}"
-    )
+    return cleaned_name, caption
 
-    # Truncate caption if longer than Telegram limit
-    if len(caption) > TELEGRAM_CAPTION_LIMIT:
-        caption = caption[: TELEGRAM_CAPTION_LIMIT - 8] + "…"
-
-    return caption
-
-
-# --- Commands ---
+# ---------------- COMMANDS ----------------
 @bot.message_handler(commands=['start'])
 def start(msg):
     bot.reply_to(
         msg,
-        "👋 Welcome to ISH Bot (Shitij Edition)!\n\n"
-        "📌 Send any video or document — I'll:\n"
-        "   • Replace all tags/usernames → Shitij / [@ShitijRips]\n"
-        "   • Remove unwanted links\n"
-        "   • Format caption exactly like Shitij Style 🔥\n\n"
-        "✅ Works automatically for videos and documents."
+        "👋 Welcome!\n\n"
+        "📌 Send any video/document, I'll:\n"
+        "   - Clean filename\n"
+        "   - Remove extra creator tags\n"
+        "   - Add _ShitijRips.mp4 suffix\n"
+        "   - Add caption: Join:-[@ShitijRips]\n"
+        "✅ Forward/send exactly this format."
     )
-
 
 @bot.message_handler(commands=['addadmin'])
 def add_admin(msg):
@@ -100,42 +79,7 @@ def add_admin(msg):
     except Exception as e:
         bot.reply_to(msg, f"⚠️ Error: {e}")
 
-
-@bot.message_handler(commands=['whereadmin'])
-def where_admin(msg):
-    if msg.from_user.id not in ADMINS:
-        bot.reply_to(msg, "❌ Admin only.")
-        return
-    if not TARGET_CHATS:
-        bot.reply_to(msg, "🤖 Bot is not admin in any group/channel yet.")
-        return
-    text = "📋 <b>ISH Bot is admin in:</b>\n\n"
-    for chat_id in TARGET_CHATS:
-        text += f"🔹 <code>{chat_id}</code>\n"
-    bot.reply_to(msg, text)
-
-
-@bot.message_handler(commands=['removechat'])
-def remove_chat(msg):
-    if msg.from_user.id not in ADMINS:
-        bot.reply_to(msg, "❌ Admin only.")
-        return
-    try:
-        parts = msg.text.split()
-        if len(parts) < 2:
-            bot.reply_to(msg, "Usage: /removechat <chat_id>")
-            return
-        chat_id = int(parts[1])
-        if chat_id in TARGET_CHATS:
-            TARGET_CHATS.remove(chat_id)
-            bot.reply_to(msg, f"✅ Removed chat: <code>{chat_id}</code>")
-        else:
-            bot.reply_to(msg, "⚠️ Chat ID not found.")
-    except Exception as e:
-        bot.reply_to(msg, f"⚠️ Error: {e}")
-
-
-# --- Media Handler ---
+# ---------------- MEDIA HANDLER ----------------
 @bot.message_handler(content_types=['video', 'document'])
 def handle_media(msg):
     user_id = msg.from_user.id
@@ -154,31 +98,29 @@ def handle_media(msg):
         send_func = bot.send_document
         extra_args = {}
 
-    # Clean caption
-    new_caption = clean_filename(original_name)
+    cleaned_name, caption = clean_filename_and_caption(original_name)
 
     try:
-        # Send cleaned version to sender
-        send_func(msg.chat.id, file_id, caption=new_caption, parse_mode="HTML", **extra_args)
+        # Send back to sender
+        send_func(msg.chat.id, file_id, caption=f"{cleaned_name}\n{caption}", parse_mode="HTML", **extra_args)
 
-        # Forward to target chats
+        # Forward to admin targets
         for target in TARGET_CHATS:
             try:
-                send_func(target, file_id, caption=new_caption, parse_mode="HTML", **extra_args)
+                send_func(target, file_id, caption=f"{cleaned_name}\n{caption}", parse_mode="HTML", **extra_args)
             except Exception as e:
                 print(f"⚠️ Failed to send to {target}: {e}")
 
         # Send to dump channel
         try:
-            send_func(DUMP_CHANNEL_ID, file_id, caption=new_caption, parse_mode="HTML", **extra_args)
+            send_func(DUMP_CHANNEL_ID, file_id, caption=f"{cleaned_name}\n{caption}", parse_mode="HTML", **extra_args)
         except Exception as e:
             print(f"⚠️ Failed to send to dump channel: {e}")
 
     except Exception as e:
         bot.reply_to(msg, f"⚠️ Error sending: {e}")
 
-
-# --- Track where bot is admin ---
+# ---------------- TRACK BOT ADMIN STATUS ----------------
 @bot.my_chat_member_handler()
 def track_groups_channels(update):
     chat = update.chat
@@ -190,9 +132,7 @@ def track_groups_channels(update):
         TARGET_CHATS.discard(chat.id)
         print(f"❌ Bot removed from: {chat.title or chat.id}")
 
-
-# --- Run Bot ---
-print("🤖 ISH Bot (Shitij Edition) running — auto Shitij/@ShitijRips cleaner, caption formatter, and dump sender!")
-
+# ---------------- RUN BOT ----------------
+print("🤖 ISH Bot running: sending all files with _ShitijRips suffix and Join:-[@ShitijRips] caption...")
 bot.remove_webhook()
 bot.infinity_polling(skip_pending=True, timeout=20)
