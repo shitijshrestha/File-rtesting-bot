@@ -2,67 +2,49 @@ import telebot
 import re
 import html
 
-# ---------------- CONFIG ----------------
+# --- Bot Token ---
 BOT_TOKEN = "8338489595:AAFM9H8I9FYtJw7j-VZgVFHE3wPHykX4CQ4"
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
+# --- Admins & Targets ---
 ADMINS = set()
 TARGET_CHATS = set()
 DUMP_CHANNEL_ID = -1002990446200
-TELEGRAM_CAPTION_LIMIT = 1024
+TELEGRAM_CAPTION_LIMIT = 1024  # Telegram max caption length
 
-# ---------------- HELPERS ----------------
-def clean_filename_and_caption(original: str) -> (str, str):
-    """
-    Clean filename:
-    - Remove any trailing creator tags
-    - Replace DG_Contents/tvshowhub/etc.
-    - Add _ShitijRips.mp4 suffix
-    - Caption is always: Join:-[@ShitijRips]
-    """
+# --- Helper Function ---
+def clean_filename(original: str) -> str:
     if not original:
         original = "Video.mp4"
 
-    # Remove normal links
     no_links = re.sub(r"(https?://\S+)", "", original)
-
-    # Remove any trailing creator tags like -Mrn_Officialx, -SRBRips, -DG_Contents
-    no_extra_tags = re.sub(r"-[@\w]+$", "", no_links)
-
-    # Replace DG_Contents, tvshowhub, etc. with Shitij
     replaced = re.sub(
-        r"(?i)(DG_Contents|tvshowhub|tvshow|hub|bhavik611|mrxvoltz|srp_main_channel|srbrips)",
+        r"(?i)(tvshowhub|tvshow|hub|bhavik611|mrxvoltz|srp_main_channel|srbrips)",
         "Shitij",
-        no_extra_tags,
+        no_links,
     )
-
-    # Collapse multiple "Shitij"
+    replaced = re.sub(r"\[@[^]]*\]", "[@ShitijRips]", replaced, flags=re.IGNORECASE)
     replaced = re.sub(r"(Shitij)+", "Shitij", replaced)
+    cleaned = re.sub(r"[\s/]+", ".", replaced).strip(" .")
 
-    # Replace spaces/slashes with dots
-    cleaned_name = re.sub(r"[\s/]+", ".", replaced).strip(" .")
+    caption = f"<code>{html.escape(cleaned)}</code>"
+    if len(caption) > TELEGRAM_CAPTION_LIMIT:
+        caption = caption[: TELEGRAM_CAPTION_LIMIT - 8] + "…</code>"
+    return caption
 
-    # Add _ShitijRips.mp4 suffix
-    cleaned_name = re.sub(r"\.mp4$", "", cleaned_name, flags=re.IGNORECASE)
-    cleaned_name += "_ShitijRips.mp4"
-
-    # Caption line
-    caption = f"Join:-[@ShitijRips]"
-
-    return cleaned_name, caption
-
-# ---------------- COMMANDS ----------------
+# --- Commands ---
 @bot.message_handler(commands=['start'])
 def start(msg):
     bot.reply_to(
         msg,
         "👋 Welcome!\n\n"
         "📌 Send any video/document, I'll:\n"
-        "   - Clean filename\n"
-        "   - Remove extra creator tags\n"
-        "   - Add _ShitijRips.mp4 suffix\n"
-        "   - Add caption: Join:-[@ShitijRips]\n"
-        "✅ Forward/send exactly this format."
+        "   - Replace names → Shitij\n"
+        "   - Remove normal links in filename\n"
+        "   - Convert [@anything] → [@ShitijRips]\n"
+        "   - Keep Join links (https://t.me/...) safe\n"
+        "   - Keep filename in monospace style\n\n"
+        "✅ Works for videos/documents only."
     )
 
 @bot.message_handler(commands=['addadmin'])
@@ -79,7 +61,39 @@ def add_admin(msg):
     except Exception as e:
         bot.reply_to(msg, f"⚠️ Error: {e}")
 
-# ---------------- MEDIA HANDLER ----------------
+@bot.message_handler(commands=['whereadmin'])
+def where_admin(msg):
+    if msg.from_user.id not in ADMINS:
+        bot.reply_to(msg, "❌ Admin only.")
+        return
+    if not TARGET_CHATS:
+        bot.reply_to(msg, "🤖 Bot is not admin in any group/channel yet.")
+        return
+    text = "📋 <b>ISH Bot is admin in:</b>\n\n"
+    for chat_id in TARGET_CHATS:
+        text += f"🔹 <code>{chat_id}</code>\n"
+    bot.reply_to(msg, text)
+
+@bot.message_handler(commands=['removechat'])
+def remove_chat(msg):
+    if msg.from_user.id not in ADMINS:
+        bot.reply_to(msg, "❌ Admin only.")
+        return
+    try:
+        parts = msg.text.split()
+        if len(parts) < 2:
+            bot.reply_to(msg, "Usage: /removechat <chat_id>")
+            return
+        chat_id = int(parts[1])
+        if chat_id in TARGET_CHATS:
+            TARGET_CHATS.remove(chat_id)
+            bot.reply_to(msg, f"✅ Removed chat: <code>{chat_id}</code>")
+        else:
+            bot.reply_to(msg, "⚠️ Chat ID not found in admin list.")
+    except Exception as e:
+        bot.reply_to(msg, f"⚠️ Error: {e}")
+
+# --- Media Handler ---
 @bot.message_handler(content_types=['video', 'document'])
 def handle_media(msg):
     user_id = msg.from_user.id
@@ -98,29 +112,26 @@ def handle_media(msg):
         send_func = bot.send_document
         extra_args = {}
 
-    cleaned_name, caption = clean_filename_and_caption(original_name)
+    new_caption = clean_filename(original_name)
 
     try:
-        # Send back to sender
-        send_func(msg.chat.id, file_id, caption=f"{cleaned_name}\n{caption}", parse_mode="HTML", **extra_args)
+        send_func(msg.chat.id, file_id, caption=new_caption, parse_mode="HTML", **extra_args)
 
-        # Forward to admin targets
         for target in TARGET_CHATS:
             try:
-                send_func(target, file_id, caption=f"{cleaned_name}\n{caption}", parse_mode="HTML", **extra_args)
+                send_func(target, file_id, caption=new_caption, parse_mode="HTML", **extra_args)
             except Exception as e:
                 print(f"⚠️ Failed to send to {target}: {e}")
 
-        # Send to dump channel
         try:
-            send_func(DUMP_CHANNEL_ID, file_id, caption=f"{cleaned_name}\n{caption}", parse_mode="HTML", **extra_args)
+            send_func(DUMP_CHANNEL_ID, file_id, caption=new_caption, parse_mode="HTML", **extra_args)
         except Exception as e:
             print(f"⚠️ Failed to send to dump channel: {e}")
 
     except Exception as e:
         bot.reply_to(msg, f"⚠️ Error sending: {e}")
 
-# ---------------- TRACK BOT ADMIN STATUS ----------------
+# --- Track groups/channels where bot is admin ---
 @bot.my_chat_member_handler()
 def track_groups_channels(update):
     chat = update.chat
@@ -132,7 +143,8 @@ def track_groups_channels(update):
         TARGET_CHATS.discard(chat.id)
         print(f"❌ Bot removed from: {chat.title or chat.id}")
 
-# ---------------- RUN BOT ----------------
-print("🤖 ISH Bot running: sending all files with _ShitijRips suffix and Join:-[@ShitijRips] caption...")
+# --- Run Bot ---
+print("🤖 ISH Bot running with Shitij renaming, caption cleaning, admin auto-forwarding & dump channel...")
+
 bot.remove_webhook()
 bot.infinity_polling(skip_pending=True, timeout=20)
