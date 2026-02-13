@@ -4,7 +4,7 @@ import html
 
 # ---------------- CONFIG ---------------- #
 
-BOT_TOKEN = "8338489595:AAFM9H8I9FYtJw7j-VZgVFHE3wPHykX4CQ4"
+BOT_TOKEN = "8338489595:AAHPhsAj-SvbXlzdcB2mdPBNH6ch7Drot3I"
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
 BRAND = "@ShitijRips"
