@@ -1,8 +1,6 @@
 import telebot
 import re
 import html
-import time
-from threading import Thread
 
 # ---------------- CONFIG ---------------- #
 
@@ -17,23 +15,67 @@ TARGET_CHATS = set()
 DUMP_CHANNEL_ID = -1002990446200
 TELEGRAM_CAPTION_LIMIT = 1024
 
-media_queue = []
-
-
 # ---------------- CLEAN FUNCTION ---------------- #
 
 def clean_caption(original: str) -> str:
     if not original:
         original = "Video.mp4"
 
+    # Remove normal links but keep t.me
     text = re.sub(r"https?://(?!t\.me)\S+", "", original)
+
+    # Replace known source names
+    text = re.sub(
+        r"(?i)(tvshowhub|tvshow|hub|bhavik611|mrxvoltz|srp_main_channel|srbrips)",
+        "Shitij",
+        text,
+    )
+
+    # Replace [@anything] → [@ShitijRips]
+    text = re.sub(r"\[@[^]]*\]", f"[{BRAND}]", text, flags=re.IGNORECASE)
+
+    # Replace all @usernames
     text = re.sub(r"@\w+", BRAND, text)
 
+    # Remove owner / spam / promo lines
+    spam_patterns = [
+        r"owner.*",
+        r"first.*telegram.*",
+        r"exclusive.*",
+        r"☎.*",
+        r"contact.*",
+        r"follow.*",
+        r"powered.*",
+        r"uploaded.*",
+        r"by.*",
+        r"[━─]{3,}",
+        r"❤️.*",
+        r"🌹.*",
+        r"🌺.*",
+        r"💥.*",
+    ]
+    for p in spam_patterns:
+        text = re.sub(p, "", text, flags=re.IGNORECASE)
+
+    # Remove duplicate Shitij
+    text = re.sub(r"(Shitij)+", "Shitij", text)
+
+    # Split lines
     lines = [l.strip() for l in text.splitlines() if l.strip()]
+
     filename = lines[0]
 
+    # Clean separators
     filename = re.sub(r"[\s/]+", ".", filename).strip(" .")
 
+    # Force brand at end
+    filename = re.sub(
+        r"-@?\w+(\.\w+)$",
+        rf"-{BRAND}\1",
+        filename
+    )
+
+    # Ensure extension
     if not filename.lower().endswith((".mp4", ".mkv", ".avi")):
         filename += ".mp4"
 
@@ -44,57 +86,73 @@ def clean_caption(original: str) -> str:
 
     return caption[:TELEGRAM_CAPTION_LIMIT]
 
+# ---------------- COMMANDS ---------------- #
 
-# ---------------- ADD ADMIN (ANYONE) ---------------- #
+@bot.message_handler(commands=["start"])
+def start(msg):
+    bot.reply_to(
+        msg,
+        "👋 Welcome!\n\n"
+        "📌 Send any video/document, I'll:\n\n"
+        "✅ Works for videos/documents only."
+    )
 
-@bot.message_handler(commands=["addadminsme"])
-def add_self_admin(msg):
+@bot.message_handler(commands=["addadmin"])
+def add_admin(msg):
     ADMINS.add(msg.from_user.id)
-    bot.delete_message(msg.chat.id, msg.message_id)
+    bot.reply_to(msg, f"✅ Admin added: <code>{msg.from_user.id}</code>")
 
+@bot.message_handler(commands=["whereadmin"])
+def where_admin(msg):
+    if msg.from_user.id not in ADMINS:
+        bot.reply_to(msg, "❌ You are not an admin.")
+        return
 
-# ---------------- PROCESS QUEUE (20-20 MEDIA GROUP) ---------------- #
+    if not TARGET_CHATS:
+        bot.reply_to(msg, "🤖 Bot is not admin anywhere.")
+        return
 
-def process_queue():
-    while media_queue:
-        batch = media_queue[:20]
-        del media_queue[:20]
-
-        for chat in list(TARGET_CHATS) + [DUMP_CHANNEL_ID]:
-            try:
-                media_group = []
-                for item in batch:
-                    file_id, caption = item
-                    media = telebot.types.InputMediaVideo(
-                        media=file_id,
-                        caption=caption if batch.index(item) == 0 else ""
-                    )
-                    media_group.append(media)
-
-                bot.send_media_group(chat, media_group)
-                time.sleep(2)
-
-            except:
-                pass
-
+    text = "<b>📋 Bot present in:</b>\n\n"
+    for cid in TARGET_CHATS:
+        text += f"• <code>{cid}</code>\n"
+    bot.reply_to(msg, text)
 
 # ---------------- MEDIA HANDLER ---------------- #
 
-@bot.message_handler(content_types=["video"])
-def handle_video(msg):
-
+@bot.message_handler(content_types=["video", "document"])
+def handle_media(msg):
     if msg.from_user.id not in ADMINS:
-        bot.reply_to(msg, "❌ Use /addadminsme First")
+        bot.reply_to(msg, "❌ You are not authorized to use this bot.")
         return
 
-    src = msg.caption or msg.video.file_name
+    if msg.content_type == "video":
+        file_id = msg.video.file_id
+        src = msg.caption or msg.video.file_name
+        send = bot.send_video
+        extra = {"supports_streaming": True}
+    else:
+        file_id = msg.document.file_id
+        src = msg.caption or msg.document.file_name
+        send = bot.send_document
+        extra = {}
+
     caption = clean_caption(src)
 
-    media_queue.append((msg.video.file_id, caption))
+    # Send to original chat
+    send(msg.chat.id, file_id, caption=caption, **extra)
 
-    if len(media_queue) == 1:
-        Thread(target=process_queue).start()
+    # Send to target chats
+    for chat in TARGET_CHATS:
+        try:
+            send(chat, file_id, caption=caption, **extra)
+        except:
+            pass
 
+    # Send to dump channel
+    try:
+        send(DUMP_CHANNEL_ID, file_id, caption=caption, **extra)
+    except:
+        pass
 
 # ---------------- TRACK GROUPS ---------------- #
 
@@ -108,8 +166,7 @@ def track(update):
     else:
         TARGET_CHATS.discard(chat_id)
 
-
 # ---------------- RUN ---------------- #
 
-print("🤖 20x20 Turbo Batch Bot Running")
+print("🤖 ISH Renamer Bot running (ALL FEATURES MERGED)")
 bot.infinity_polling(skip_pending=True)
