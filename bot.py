@@ -11,9 +11,13 @@ BRAND = "@ShitijRips"
 
 ADMINS = set()
 TARGET_CHATS = set()
-
 DUMP_CHANNEL_ID = -1002990446200
 TELEGRAM_CAPTION_LIMIT = 1024
+
+# ---------------- FORWARD CONFIG ---------------- #
+FORWARD_SOURCES = {}  # admin_id → source_chat (username/id)
+FORWARD_GROUPS = {}   # admin_id → target group/channel id
+FORWARD_RUNNING = {}  # admin_id → True/False
 
 # ---------------- CLEAN FUNCTION ---------------- #
 
@@ -117,6 +121,70 @@ def where_admin(msg):
         text += f"• <code>{cid}</code>\n"
     bot.reply_to(msg, text)
 
+# ---------------- FORWARD FEATURE ---------------- #
+
+@bot.message_handler(commands=["forward"])
+def start_forward(msg):
+    if msg.from_user.id not in ADMINS:
+        bot.reply_to(msg, "❌ You are not an admin.")
+        return
+
+    FORWARD_RUNNING[msg.from_user.id] = False
+    bot.reply_to(
+        msg,
+        "❪ SET SOURCE CHAT ❫\n\n"
+        "Forward the first/last message link of source chat.\n"
+        "Then set target group using /setgroup <id>\n"
+        "Use /cancel to cancel this process."
+    )
+
+@bot.message_handler(commands=["setgroup"])
+def set_group(msg):
+    if msg.from_user.id not in ADMINS:
+        bot.reply_to(msg, "❌ You are not an admin.")
+        return
+    try:
+        group_id = int(msg.text.split(" ",1)[1])
+        FORWARD_GROUPS[msg.from_user.id] = group_id
+        FORWARD_RUNNING[msg.from_user.id] = True
+        bot.reply_to(msg, f"✅ Target group set: {group_id}\nForwarding will start automatically.")
+    except:
+        bot.reply_to(msg, "❌ Usage: /setgroup -1001234567890")
+
+@bot.message_handler(commands=["cancel"])
+def cancel_forward(msg):
+    FORWARD_SOURCES.pop(msg.from_user.id, None)
+    FORWARD_GROUPS.pop(msg.from_user.id, None)
+    FORWARD_RUNNING[msg.from_user.id] = False
+    bot.reply_to(msg, "❌ Forwarding process cancelled.")
+
+@bot.message_handler(func=lambda m: True)
+def capture_source(msg):
+    if msg.from_user.id not in ADMINS:
+        return
+
+    # Only process if user started /forward
+    if msg.from_user.id not in FORWARD_RUNNING or FORWARD_RUNNING[msg.from_user.id]:
+        return
+
+    source_chat_id = None
+
+    # If message is forwarded
+    if msg.forward_from_chat:
+        source_chat_id = msg.forward_from_chat.id
+    # If t.me link
+    elif msg.text and "t.me" in msg.text:
+        match = re.search(r"t\.me/([a-zA-Z0-9_]+)/(\d+)", msg.text)
+        if match:
+            source_chat_id = match.group(1)
+
+    if not source_chat_id:
+        bot.reply_to(msg, "❌ Could not detect source. Forward a message or send message link.")
+        return
+
+    FORWARD_SOURCES[msg.from_user.id] = source_chat_id
+    bot.reply_to(msg, f"✅ Source set: {source_chat_id}\nNow all new messages will be forwarded automatically.")
+
 # ---------------- MEDIA HANDLER ---------------- #
 
 @bot.message_handler(content_types=["video", "document"])
@@ -154,6 +222,36 @@ def handle_media(msg):
     except:
         pass
 
+# ---------------- AUTO FORWARD FROM SET SOURCE ---------------- #
+
+@bot.message_handler(content_types=["video","document","text"])
+def auto_forward(msg):
+    for admin_id, source in FORWARD_SOURCES.items():
+        if not FORWARD_RUNNING.get(admin_id, False):
+            continue
+
+        target = FORWARD_GROUPS.get(admin_id)
+        if not target:
+            continue
+
+        # Forward if message is from source chat
+        if msg.chat.id == source or (isinstance(source,str) and getattr(msg.chat,"username","")==source):
+            caption = ""
+            if msg.content_type == "video":
+                caption = clean_caption(msg.caption or msg.video.file_name)
+                try:
+                    bot.send_video(target, msg.video.file_id, caption=caption, supports_streaming=True)
+                except: pass
+            elif msg.content_type == "document":
+                caption = clean_caption(msg.caption or msg.document.file_name)
+                try:
+                    bot.send_document(target, msg.document.file_id, caption=caption)
+                except: pass
+            else:
+                try:
+                    bot.send_message(target, msg.text)
+                except: pass
+
 # ---------------- TRACK GROUPS ---------------- #
 
 @bot.my_chat_member_handler()
@@ -168,5 +266,5 @@ def track(update):
 
 # ---------------- RUN ---------------- #
 
-print("🤖 ISH Renamer Bot running (ALL FEATURES MERGED)")
+print("🤖 ISH Renamer Bot + Forward Feature running")
 bot.infinity_polling(skip_pending=True)
