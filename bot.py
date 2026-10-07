@@ -30,7 +30,7 @@ def clean_caption(original: str) -> str:
 
     # Replace known source names
     text = re.sub(
-        r"(?i)(tvshowhub|tvshow|hub|bhavik611|mrxvoltz|srp_main_channel|srbrips)",
+        r"(?i)(tvshowhub|tvshow|hub|bhavik611|mrxvoltz|srp_main_channel||SARDAR\.\&\.MHDZubair|Cinevood|SRBRipx_Official|PMTV4|DG_Contents|srbrips)",
         "Shitij",
         text,
     )
