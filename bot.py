@@ -7,7 +7,7 @@ import logging
 # CONFIG
 # ============================================================
 
-BOT_TOKEN = "PASTE_NEW_BOT_TOKEN_HERE"
+BOT_TOKEN = "8338489595:AAGvSOUH8vXzQX-ynfDOxhAGeC5ir9wE1HE"
 
 bot = telebot.TeleBot(
     BOT_TOKEN,
