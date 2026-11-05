@@ -7,7 +7,7 @@ import logging
 # CONFIG
 # ============================================================
 
-BOT_TOKEN = "8338489595:AAGvSOUH8vXzQX-ynfDOxhAGeC5ir9wE1HE"
+BOT_TOKEN = "8605216089:AAEk8t8Qts1NrFqw1ggrq8JnwcUkP_OCIWc"
 
 bot = telebot.TeleBot(
     BOT_TOKEN,
@@ -169,9 +169,11 @@ def clean_caption(original):
         r"srbrips|"
         r"SARDAR\.\&\.MHDZubair|"
         r"AJK-BOY\.\&\.MHDZubair|"
-        r"Cinevood|"
+        r"Cinevood|"  r"      MHDZubair.\.\&\.AJK.BOY|"
         r"SRBRipx_Official|"
+r"MHDZubair\.\&\.Ajk.BOY|"
         r"PMTV4|"
+r"MHD\.AJK|"
         r"DG_Contents)",
         "Shitij",
         text
@@ -851,4 +853,4 @@ if __name__ == "__main__":
             "message",
             "my_chat_member"
         ]
-)
+        )
